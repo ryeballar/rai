@@ -9,9 +9,71 @@ angular.module('app', [
 	'ngTouch'
 ])
 
-.controller('Ctrl', function($scope) {
+.factory('objectStringInterpolator', function() {
+	return function(object) {
+		var newObject = angular.copy(object),
+			rawMatch, match, matches;
+
+		angular.forEach(newObject, function(string, index) {
+			matches = string.match(/{{.*?}}/g) || [];
+			while(matches.length > 0) {
+				rawMatch = matches.pop();
+				match = rawMatch.substring(2, rawMatch.length - 2);
+
+				if(newObject[match]) {
+					string = string.replace(new RegExp(rawMatch, 'g'), newObject[match]);
+				}
+			}
+			newObject[index] = string;
+		});
+
+
+
+		return newObject;
+	};
+})
+
+.factory('delayEval', function() {
+	return function(scope, expPre, expPost) {
+		scope.$eval(expPre);
+		$timeout(function() {
+			scope.$eval(expPost);
+		});
+	}
+})
+
+.run(function(objectStringInterpolator) {
+
+	var object = {
+		HOST: 'www.whatever.com',
+		API: '{{HOST}}/api/v1',
+		USER: '{{API}}/users',
+		ME: '{{USER}}/me'
+	};
+
+	console.log(objectStringInterpolator(object));
+
+})
+
+.controller('Ctrl', function($scope, $timeout) {
+
+	var emails = [
+		'ryeballar@gmail.com',
+		'charmhaze21@gmail.com',
+		'rjwapow@yahoo.com'
+	];
+
 	$scope.user = {};
-	$scope.hello = 'hello world';
+
+	$scope.isEmailDuplicate = false;
+	
+	$scope.submit = function() {
+		var isEmailDuplicate = emails.indexOf($scope.user.emailAddress) >= 0;
+		$scope.isEmailDuplicate = !isEmailDuplicate;
+		$timeout(function() {
+			$scope.isEmailDuplicate = isEmailDuplicate;
+		});
+	};
 })
 
 .provider('raiError', function() {
@@ -98,14 +160,15 @@ angular.module('app', [
 	};
 })
 
-.directive('raiForm', function(raiFormService, $window) {
+.directive('raiForm', function(raiFormService, $window, $timeout) {
 
 	return {
 		require: 'form',
 		priority: -1000,
 		compile: function(tElem, tAttr) {
 			var elements = $window.document.querySelectorAll('[rai-input]'),
-				formName = tAttr.name || 'form';
+				formName = tAttr.name || 'form',
+				jqlClones = [];
 
 			tAttr.$set('novalidate', '');
 			tAttr.$set('name', formName);
@@ -136,16 +199,18 @@ angular.module('app', [
 				var formGroup = angular.element('<div>'),
 					errorDiv = angular.element('<div>'),
 					labelElem = angular.element('<label>'),
-					clone = jqlElement.clone(true),
+					jqlClone = jqlElement.clone(true),
 					formField = formName + '.' + name,
 					hasError = formField + '.$invalid' + 
 						' && ' +
 						formField + '.ACTIVE';
 
+				jqlClones.push(jqlClone);
+
 				labelElem.addClass('control-label');
 				labelElem.html(label);
 				formGroup.append(labelElem);
-				formGroup.append(clone);
+				formGroup.append(jqlClone);
 
 				errorDiv.attr('ng-show', hasError);
 				errorDiv.attr('rai-error', formField);
@@ -157,17 +222,31 @@ angular.module('app', [
 
 			});
 
+			elements = null;
+
 			return function(scope, elem, attr, form) {
 				elem.on('submit', function() {
+
 					raiFormService.setGlobalState(form, 'ACTIVE', true);
 					scope.$apply();
+
+					$timeout(function() {
+						var i, jqlClone;
+						for(i = 0; i < jqlClones.length; i++) {
+							jqlClone = jqlClones[i];
+							if(jqlClone.hasClass('ng-invalid')) {
+								jqlClone[0].focus();
+								break;
+							}
+						}
+					});
 				});
 			};
 		}
 	};
 })
 
-.directive('raiInput', function(raiError) {
+.directive('raiInput', function(raiError, $timeout) {
 	return {
 		require: 'ngModel',
 		link: function(scope, elem, attr, ngModel) {
@@ -175,18 +254,24 @@ angular.module('app', [
 
 			var isDuplicate = function(validityName) {
 				return function(isDuplicate) {
-					ngModel.$setValidity(validityName, isDuplicate && ngModel.$valid);
+					ngModel.$setValidity(validityName, !isDuplicate);
 				};
 			};
 
-			ngModel.$parsers.unshift(function(value) {
-				ngModel.ACTIVE = false;
-				return value;
-			});
+			var stateChanges = [];
 
 			elem.on('blur', function() {
 				ngModel.ACTIVE = true;
+
 				scope.$apply();
+			});
+
+			ngModel.$parsers.unshift(function(value) {
+				ngModel.ACTIVE = false;
+				angular.forEach(stateChanges, function(fn) {
+					fn();
+				});
+				return value;
 			});
 
 			raiError.setProperties(properties, attr);
@@ -200,10 +285,22 @@ angular.module('app', [
 
 			if(angular.isDefined(attr.raiDuplicateEmail)) {
 				scope.$watch(attr.raiDuplicateEmail, isDuplicate('raiDuplicateEmail'));
+				stateChanges.push(function() {
+					ngModel.$setValidity('raiDuplicateEmail', false);
+					$timeout(function() {
+						ngModel.$setValidity('raiDuplicateEmail', true);
+					});
+				});
 			}
 			
 			if(angular.isDefined(attr.raiDuplicateicateUsername)) {
 				scope.$watch(attr.raiDuplicateUsername, isDuplicate('raiDuplicateUsername'));
+				stateChanges.push(function() {
+					ngModel.$setValidity('raiDuplicateicateUsername', false);
+					$timeout(function() {
+						ngModel.$setValidity('raiDuplicateicateUsername', true);
+					});
+				});
 			}
 
 			if(attr.type === 'password' && angular.isDefined(attr.raiMatchPassword)) {

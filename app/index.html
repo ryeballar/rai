@@ -22,11 +22,14 @@
 	<!-- Add your site or application content here -->
 	
 
-	<form rai-form class="container-fluid">
+	<form rai-form class="container-fluid" ng-submit="submit()">
+
+		<input type="email" rai-input="user.emailAddress" class="form-control" required autofocus
+			rai-duplicate-email="isEmailDuplicate">
 
 		<div class="row">
 			<div class="col-md-6">
-				<input type="password" rai-input="user.password" class="form-control" ng-minlength="5" required autofocus
+				<input type="password" rai-input="user.password" class="form-control" ng-minlength="5" required
 					rai-invalidate="form.confirmPassword.$error.raiMatchPassword && form.confirmPassword.ACTIVE">
 			</div>
 			<div class="col-md-6">
@@ -35,8 +38,8 @@
 			</div>
 		</div>
 
-		<button type="submit">Submit</button>
-
+		<br>
+		<button type="submit" class="btn btn-primary" ng-disabled="form.$invalid">Submit</button>
 	</form>
 
 
